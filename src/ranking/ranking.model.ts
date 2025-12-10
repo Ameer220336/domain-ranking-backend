@@ -1,23 +1,27 @@
 import { Table, Column, Model, DataType } from 'sequelize-typescript';
-
-@Table({ tableName: 'rankings' })
+@Table({
+  tableName: 'rankings',
+  timestamps: true,
+})
 export class Ranking extends Model {
   @Column({
     type: DataType.STRING,
     allowNull: false,
+    field: 'domain',
   })
-  domain: string;
+  declare domain: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
+    field: 'rank',
   })
-  rank: number;
+  declare rank: number;
 
   @Column({
-    type: DataType.DATE,
+    type: DataType.DATEONLY,
     allowNull: false,
-    defaultValue: DataType.NOW,
+    field: 'date',
   })
-  timestamp: Date;
+  declare date: string;
 }

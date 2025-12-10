@@ -13,34 +13,48 @@ export class RankingService {
     return this.rankingModel.create({ domain, rank });
   }
 
-  async getHistory(domain: string) {
-    return this.rankingModel.findAll({
+  async fetchRank(domain: string) {
+    // Check cache from database
+    const cached = await this.rankingModel.findAll({
       where: { domain },
-      order: [['timestamp', 'ASC']],
+      order: [['date', 'ASC']],
     });
-  }
 
-  async fetchTrancoRank(domain: string) {
+    if (cached.length > 0) {
+      const newest = cached[cached.length - 1].updatedAt;
+      const isRecent = Date.now() - newest.getTime() < 24 * 60 * 60 * 1000;
+
+      if (isRecent) {
+        console.log(`Serving ${domain} from cache`);
+
+        return {
+          domain,
+          labels: cached.map((c) => c.date),
+          ranks: cached.map((c) => c.rank),
+        };
+      }
+    }
+
+    // Fetch from Tranco
     const url = `${process.env.TRNACO_API_BASE}/${domain}`;
     const response = await fetch(url);
     const json = await response.json();
 
-    // validate
-    if (!json.ranks || !Array.isArray(json.ranks)) {
-      throw new Error('Unexpected Tranco response format');
-    }
+    // Save to DB
+    await this.rankingModel.destroy({ where: { domain } });
 
-    const sorted = json.ranks.sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    );
+    const rows = json.ranks.map((r) => ({
+      domain,
+      date: r.date,
+      rank: r.rank,
+    }));
 
-    const labels = sorted.map((entry) => entry.date);
-    const ranks = sorted.map((entry) => entry.rank);
+    await this.rankingModel.bulkCreate(rows);
 
     return {
-      domain: json.domain,
-      labels,
-      ranks,
+      domain,
+      labels: rows.map((r) => r.date),
+      ranks: rows.map((r) => r.rank),
     };
   }
 }
