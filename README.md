@@ -17,7 +17,7 @@ https://tranco-list.eu/api/ranks/domain/<domain>
   - Otherwise, fresh data is fetched and stored.
 
 - Support Multi-Domain Comparison
-  A user can request multiple domains at once using commas, e.g.: and backend returns chart ready ranking datasets for each domain
+  A user can request multiple domains at once using commas and backend returns chart ready ranking datasets for each domain
   ```bash
   GET /ranking/google.com,facebook.com,github.com
   ```
@@ -34,6 +34,22 @@ https://tranco-list.eu/api/ranks/domain/<domain>
   ```bash
   GET /ranking/google.com,facebook.com
   ```
+- Response Structure
+
+```bash
+{
+  "google.com": {
+    "domain": "google.com",
+    "labels": ["2025-01-01", "2025-01-02"],
+    "ranks": [1, 1]
+  },
+  "facebook.com": {
+    "domain": "facebook.com",
+    "labels": [...],
+    "ranks": [...]
+  }
+}
+```
 
 ## Tech Stack
 
