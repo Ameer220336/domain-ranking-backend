@@ -1,9 +1,22 @@
-import { Table, Column, Model, DataType } from 'sequelize-typescript';
+import {
+  Table,
+  Column,
+  Model,
+  DataType,
+  PrimaryKey,
+  Default,
+} from 'sequelize-typescript';
 @Table({
   tableName: 'rankings',
   timestamps: true,
 })
 export class Ranking extends Model {
+  @PrimaryKey
+  @Default(DataType.UUIDV4)
+  @Column({
+    type: DataType.UUID,
+  })
+  declare id: string;
   @Column({
     type: DataType.STRING,
     allowNull: false,
