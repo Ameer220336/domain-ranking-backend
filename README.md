@@ -1,87 +1,122 @@
-## Description
+# Domain Ranking Backend
 
-NestJS backend that fetches domain popularity rankings using the Tranco Ranking API, stores results in a PostgreSQL (Neon) database, and serves cached ranking data to optimize performance and reduce API calls.
+A simple NestJS API that fetches domain popularity rankings from the Tranco API and caches them in PostgreSQL for better performance.
 
-## Features
+## 🚀 What This Does
 
-- Fetch Real-time Domain Rankings
-  Queries domain rank history from the public Tranco API:
+- **Fetches domain rankings** from [Tranco List API](https://tranco-list.eu)
+- **Caches results** in PostgreSQL for 24 hours to reduce API calls
+- **Supports multiple domains** in a single request
+- **Returns chart-ready data** with dates and ranking numbers
 
+## 📋 API Endpoints
+
+### Get Single Domain Ranking
 ```bash
-https://tranco-list.eu/api/ranks/domain/<domain>
+GET http://localhost:3006/ranking/google.com
 ```
 
-- Caching in PostgreSQL
-  When a domain is queried:
-  - If cached data exists and was updated within the last 24 hours, results are served instantly without calling Tranco again.
-  - Otherwise, fresh data is fetched and stored.
-
-- Support Multi-Domain Comparison
-  A user can request multiple domains at once using commas and backend returns chart ready ranking datasets for each domain
-  ```bash
-  GET /ranking/google.com,facebook.com,github.com
-  ```
-- Sequelize + Neon Hosting
-  Uses Sequelize Models with automatic migration and connects to Neon Severless Postgres.
-
-## API Endpoints
-
-- Single Domain
-  ```bash
-  GET /ranking/google.com
-  ```
-- Multiple Domain
-  ```bash
-  GET /ranking/google.com,facebook.com
-  ```
-- Response Structure
-
+### Get Multiple Domains
 ```bash
+GET http://localhost:3006/ranking?domains=google.com,facebook.com,github.com
+```
+
+### Response Format
+```json
 {
-  "google.com": {
-    "domain": "google.com",
-    "labels": ["2025-01-01", "2025-01-02"],
-    "ranks": [1, 1]
-  },
-  "facebook.com": {
-    "domain": "facebook.com",
-    "labels": [...],
-    "ranks": [...]
-  }
+  "domain": "google.com",
+  "labels": ["2025-12-26", "2025-12-27"],
+  "ranks": [1, 1]
 }
 ```
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- NestJS
-- Sequelize
-- Neon PostgreSQL
-- Koyeb Hosting (free tier)
+- **NestJS** - Node.js framework
+- **PostgreSQL** - Database for caching
+- **Raw SQL** - Direct database queries (no ORM)
+- **Tranco API** - Domain ranking data source
 
-## Project setup
+## 🏃‍♂️ Quick Start
 
-Create a .env file:
-
+### 1. Install Dependencies
 ```bash
-DB_HOST=<your-neon-host>
-DB_PORT=5432
-DB_USER=<neon-user>
-DB_PASSWORD=<neon-password>
-DB_NAME=<database-name>
-
-TRNACO_API_BASE=https://tranco-list.eu/api/ranks/domain
-FRONTEND_URL=http://localhost:5173
-PORT=3000
+npm install
 ```
 
-For Development
+### 2. Set Up Database
 
+#### Option A: Local PostgreSQL
+1. Make sure PostgreSQL is running locally
+2. Create a database:
+   ```sql
+   CREATE DATABASE domain_ranking;
+   ```
+3. Run the schema:
+   ```bash
+   psql -d domain_ranking -f src/database/schema.sql
+   ```
+
+#### Option B: Neon Cloud Database
+1. Sign up at [neon.tech](https://neon.tech)
+2. Create a new project
+3. Copy your connection details
+
+### 3. Configure Environment
+Create a `.env` file:
+
+#### For Local PostgreSQL:
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=your_username
+DB_PASSWORD=your_password
+DB_NAME=domain_ranking
+
+TRANCO_API_BASE=https://tranco-list.eu/api/ranks/domain
+FRONTEND_URL=http://localhost:5173
+PORT=3006
+```
+
+#### For Neon PostgreSQL:
+```env
+DB_HOST=your-neon-endpoint.aws.neon.tech
+DB_PORT=5432
+DB_USER=your_neon_user
+DB_PASSWORD=your_neon_password
+DB_NAME=your_database_name
+
+TRANCO_API_BASE=https://tranco-list.eu/api/ranks/domain
+FRONTEND_URL=http://localhost:5173
+PORT=3006
+```
+
+### 4. Start the Server
 ```bash
-# development
-$ npm install
-$ npm run start:dev
+# Development mode with auto-reload
+npm run start:dev
+```
 
-For Testing
-# testing
-$ npm test
+The API will be available at `http://localhost:3006`
+
+## 🔧 How It Works
+
+1. **First Request**: API calls Tranco, stores data in database, returns results
+2. **Subsequent Requests**:
+   - If data is less than 24 hours old → serve from cache
+   - If data is older → fetch fresh data from Tranco API
+3. **Multi-domain**: Processes multiple domains in parallel for faster responses
+
+## 💡 Example Usage
+
+### Test the API
+```bash
+# Get Google's ranking
+curl http://localhost:3006/ranking/google.com
+
+# Get multiple domains
+curl "http://localhost:3006/ranking?domains=google.com,facebook.com"
+
+# Check if server is running
+curl http://localhost:3006
 ```
