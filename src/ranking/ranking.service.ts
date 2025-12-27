@@ -5,6 +5,16 @@ import { Pool } from 'pg';
 export class RankingService {
   constructor(@Inject('DB_POOL') private pool: Pool) {}
 
+  private formatDate(dateString: string): string {
+    const date = new Date(dateString);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day} ${month}, ${year}`;
+  }
+
   async create(domain: string, rank: number, date: string) {
     const client = await this.pool.connect();
     try {
@@ -24,18 +34,17 @@ export class RankingService {
     const client = await this.pool.connect();
 
     try {
-      // Check cache from database
       const cacheQuery = `
         SELECT domain, rank, date, "updatedAt"
         FROM rankings
         WHERE domain = $1
-        ORDER BY date ASC
+        ORDER BY date DESC
       `;
       const cacheResult = await client.query(cacheQuery, [domain]);
       const cached = cacheResult.rows;
 
       if (cached.length > 0) {
-        const newest = new Date(cached[cached.length - 1].updatedAt);
+        const newest = new Date(cached[0].updatedAt);
         const isRecent = Date.now() - newest.getTime() < 24 * 60 * 60 * 1000;
 
         if (isRecent) {
@@ -43,13 +52,12 @@ export class RankingService {
 
           return {
             domain,
-            labels: cached.map((c) => c.date),
+            labels: cached.map((c) => this.formatDate(c.date)),
             ranks: cached.map((c) => c.rank),
           };
         }
       }
 
-      // Fetch from Tranco (fixed typo: TRANCO_API_BASE)
       const url = `${process.env.TRANCO_API_BASE}/${domain}`;
       console.log(`Fetching from Tranco API: ${url}`);
 
@@ -64,17 +72,16 @@ export class RankingService {
         throw new Error('Invalid response from Tranco API - missing or invalid ranks array');
       }
 
-      // Clear old data for this domain
       await client.query('DELETE FROM rankings WHERE domain = $1', [domain]);
 
-      // Prepare bulk insert
-      const rows = json.ranks.map((r) => ({
-        domain,
-        date: r.date,
-        rank: r.rank,
-      }));
+      const rows = json.ranks
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map((r) => ({
+          domain,
+          date: r.date,
+          rank: r.rank,
+        }));
 
-      // Bulk insert new data
       if (rows.length > 0) {
         const insertQuery = `
           INSERT INTO rankings (id, domain, rank, date, "createdAt", "updatedAt")
@@ -89,7 +96,7 @@ export class RankingService {
 
       return {
         domain,
-        labels: rows.map((r) => r.date),
+        labels: rows.map((r) => this.formatDate(r.date)),
         ranks: rows.map((r) => r.rank),
       };
     } finally {

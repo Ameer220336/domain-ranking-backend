@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RankingService } from '../ranking.service';
 
-// Mock pg Pool
 const mockPool = {
   connect: jest.fn(),
   end: jest.fn(),
@@ -12,14 +11,12 @@ const mockClient = {
   release: jest.fn(),
 };
 
-// Mock fetch globally
 global.fetch = jest.fn();
 
 describe('RankingService', () => {
   let service: RankingService;
 
   beforeEach(async () => {
-    // Mock environment variables
     process.env.DB_HOST = 'localhost';
     process.env.DB_PORT = '5432';
     process.env.DB_USER = 'test';
@@ -82,7 +79,7 @@ describe('RankingService', () => {
           domain: 'google.com',
           rank: 5,
           date: '2025-12-01',
-          updatedAt: new Date(), // recent
+          updatedAt: new Date(),
         },
       ];
 
@@ -92,7 +89,7 @@ describe('RankingService', () => {
 
       expect(result).toEqual({
         domain: 'google.com',
-        labels: ['2025-12-01'],
+        labels: ['1 Dec, 2025'], // Formatted date
         ranks: [5],
       });
 
@@ -104,9 +101,8 @@ describe('RankingService', () => {
     });
 
     it('should fetch from Tranco API when cache is stale', async () => {
-      // Mock stale cache
       const staleDate = new Date();
-      staleDate.setDate(staleDate.getDate() - 2); // 2 days ago
+      staleDate.setDate(staleDate.getDate() - 2);
 
       const cachedRows = [
         {
@@ -138,8 +134,8 @@ describe('RankingService', () => {
 
       expect(result).toEqual({
         domain: 'google.com',
-        labels: ['2025-12-26', '2025-12-27'],
-        ranks: [3, 2],
+        labels: ['27 Dec, 2025', '26 Dec, 2025'],
+        ranks: [2, 3],
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
@@ -157,7 +153,7 @@ describe('RankingService', () => {
       };
 
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] }) // no cache
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] }) // delete query
         .mockResolvedValueOnce({ rows: [] }); // insert query
 
@@ -170,8 +166,8 @@ describe('RankingService', () => {
 
       expect(result).toEqual({
         domain: 'google.com',
-        labels: ['2025-12-26', '2025-12-27'],
-        ranks: [3, 2],
+        labels: ['27 Dec, 2025', '26 Dec, 2025'],
+        ranks: [2, 3],
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
@@ -180,7 +176,7 @@ describe('RankingService', () => {
     });
 
     it('should handle API errors gracefully', async () => {
-      mockClient.query.mockResolvedValueOnce({ rows: [] }); // no cache
+      mockClient.query.mockResolvedValueOnce({ rows: [] });
 
       (global.fetch as jest.Mock).mockResolvedValue({
         ok: false,
@@ -194,7 +190,7 @@ describe('RankingService', () => {
     });
 
     it('should handle invalid API responses', async () => {
-      mockClient.query.mockResolvedValueOnce({ rows: [] }); // no cache
+      mockClient.query.mockResolvedValueOnce({ rows: [] });
 
       (global.fetch as jest.Mock).mockResolvedValue({
         ok: true,

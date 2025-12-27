@@ -7,7 +7,7 @@ export class RankingController {
 
   @Post()
   create(@Body() body: { domain: string; rank: number; date?: string }) {
-    const date = body.date || new Date().toISOString().split('T')[0]; // Default to today
+    const date = body.date || new Date().toISOString().split('T')[0]; 
     return this.rankingService.create(body.domain, body.rank, date);
   }
 
