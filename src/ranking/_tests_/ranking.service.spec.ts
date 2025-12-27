@@ -1,96 +1,209 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RankingService } from '../ranking.service';
-import { getModelToken } from '@nestjs/sequelize';
-import { Ranking } from '../ranking.model';
+
+// Mock pg Pool
+const mockPool = {
+  connect: jest.fn(),
+  end: jest.fn(),
+};
+
+const mockClient = {
+  query: jest.fn(),
+  release: jest.fn(),
+};
+
+// Mock fetch globally
+global.fetch = jest.fn();
 
 describe('RankingService', () => {
   let service: RankingService;
 
-  const mockRankingModel = {
-    findAll: jest.fn(),
-    destroy: jest.fn(),
-    bulkCreate: jest.fn(),
-  };
-
   beforeEach(async () => {
+    // Mock environment variables
+    process.env.DB_HOST = 'localhost';
+    process.env.DB_PORT = '5432';
+    process.env.DB_USER = 'test';
+    process.env.DB_PASSWORD = 'test';
+    process.env.DB_NAME = 'test';
+    process.env.TRANCO_API_BASE = 'https://tranco-list.eu/api/ranks/domain';
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RankingService,
         {
-          provide: getModelToken(Ranking),
-          useValue: mockRankingModel,
+          provide: 'DB_POOL',
+          useValue: mockPool,
         },
       ],
     }).compile();
 
     service = module.get<RankingService>(RankingService);
+
+    // Mock the pool connection
+    mockPool.connect.mockResolvedValue(mockClient);
+
     jest.clearAllMocks();
   });
 
-  it('should return cached results when found and recent', async () => {
-    const cachedRows = [
-      {
+  afterEach(() => {
+    jest.resetAllMocks();
+  });
+
+  describe('create', () => {
+    it('should create a new ranking record', async () => {
+      const mockResult = {
+        rows: [{
+          id: 'test-uuid',
+          domain: 'google.com',
+          rank: 5,
+          date: '2025-12-01',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }]
+      };
+
+      mockClient.query.mockResolvedValue(mockResult);
+
+      const result = await service.create('google.com', 5, '2025-12-01');
+
+      expect(result).toEqual(mockResult.rows[0]);
+      expect(mockClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO rankings'),
+        ['google.com', 5, '2025-12-01']
+      );
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('fetchRank', () => {
+    it('should return cached results when found and recent', async () => {
+      const cachedRows = [
+        {
+          domain: 'google.com',
+          rank: 5,
+          date: '2025-12-01',
+          updatedAt: new Date(), // recent
+        },
+      ];
+
+      mockClient.query.mockResolvedValue({ rows: cachedRows });
+
+      const result = await service.fetchRank('google.com');
+
+      expect(result).toEqual({
         domain: 'google.com',
-        rank: 5,
-        date: '2025-12-01',
-        updatedAt: new Date(), // recent
-      },
-    ];
+        labels: ['2025-12-01'],
+        ranks: [5],
+      });
 
-    mockRankingModel.findAll.mockResolvedValue(cachedRows);
-
-    const result = await service.fetchRank('google.com');
-
-    expect(result).toEqual({
-      domain: 'google.com',
-      labels: ['2025-12-01'],
-      ranks: [5],
+      expect(mockClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT domain, rank, date'),
+        ['google.com']
+      );
+      expect(mockClient.release).toHaveBeenCalled();
     });
 
-    expect(mockRankingModel.findAll).toHaveBeenCalled();
-    expect(mockRankingModel.destroy).not.toHaveBeenCalled();
-  });
+    it('should fetch from Tranco API when cache is stale', async () => {
+      // Mock stale cache
+      const staleDate = new Date();
+      staleDate.setDate(staleDate.getDate() - 2); // 2 days ago
 
-  it('should fetch from Tranco API and store results when cache is empty', async () => {
-    mockRankingModel.findAll.mockResolvedValue([]);
+      const cachedRows = [
+        {
+          domain: 'google.com',
+          rank: 5,
+          date: '2025-12-01',
+          updatedAt: staleDate, // stale
+        },
+      ];
 
-    const apiResponse = {
-      ranks: [
-        { date: '2025-12-01', rank: 10 },
-        { date: '2025-12-02', rank: 8 },
-      ],
-    };
+      const trancoResponse = {
+        ranks: [
+          { date: '2025-12-26', rank: 3 },
+          { date: '2025-12-27', rank: 2 },
+        ],
+      };
 
-    global.fetch = jest.fn().mockResolvedValue({
-      json: () => Promise.resolve(apiResponse),
+      mockClient.query
+        .mockResolvedValueOnce({ rows: cachedRows }) // cache query
+        .mockResolvedValueOnce({ rows: [] }) // delete query
+        .mockResolvedValueOnce({ rows: [] }); // insert query
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(trancoResponse),
+      });
+
+      const result = await service.fetchRank('google.com');
+
+      expect(result).toEqual({
+        domain: 'google.com',
+        labels: ['2025-12-26', '2025-12-27'],
+        ranks: [3, 2],
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://tranco-list.eu/api/ranks/domain/google.com'
+      );
+      expect(mockClient.release).toHaveBeenCalled();
     });
 
-    const result = await service.fetchRank('google.com');
+    it('should fetch from Tranco API when no cache exists', async () => {
+      const trancoResponse = {
+        ranks: [
+          { date: '2025-12-26', rank: 3 },
+          { date: '2025-12-27', rank: 2 },
+        ],
+      };
 
-    expect(mockRankingModel.destroy).toHaveBeenCalledWith({
-      where: { domain: 'google.com' },
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] }) // no cache
+        .mockResolvedValueOnce({ rows: [] }) // delete query
+        .mockResolvedValueOnce({ rows: [] }); // insert query
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(trancoResponse),
+      });
+
+      const result = await service.fetchRank('google.com');
+
+      expect(result).toEqual({
+        domain: 'google.com',
+        labels: ['2025-12-26', '2025-12-27'],
+        ranks: [3, 2],
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://tranco-list.eu/api/ranks/domain/google.com'
+      );
     });
 
-    expect(mockRankingModel.bulkCreate).toHaveBeenCalledWith([
-      { domain: 'google.com', date: '2025-12-01', rank: 10 },
-      { domain: 'google.com', date: '2025-12-02', rank: 8 },
-    ]);
+    it('should handle API errors gracefully', async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // no cache
 
-    expect(result).toEqual({
-      domain: 'google.com',
-      labels: ['2025-12-01', '2025-12-02'],
-      ranks: [10, 8],
-    });
-  });
-  it('should throw an error when Tranco API returns invalid data', async () => {
-    mockRankingModel.findAll.mockResolvedValue([]);
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
 
-    global.fetch = jest.fn().mockResolvedValue({
-      json: () => Promise.resolve({ invalid: true }),
+      await expect(service.fetchRank('nonexistent.com')).rejects.toThrow(
+        'Tranco API request failed: 404 Not Found'
+      );
     });
 
-    await expect(service.fetchRank('google.com')).rejects.toThrow(
-      'Invalid response from Tranco API',
-    );
+    it('should handle invalid API responses', async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // no cache
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ invalid: 'response' }),
+      });
+
+      await expect(service.fetchRank('google.com')).rejects.toThrow(
+        'Invalid response from Tranco API - missing or invalid ranks array'
+      );
+    });
   });
 });
